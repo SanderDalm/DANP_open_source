@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import argparse
 import json
 from pathlib import Path
@@ -38,6 +39,7 @@ def parse_args():
     parser.add_argument("--num_noise_iters", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0, help="Base seed.")
     parser.add_argument("--num_seeds", type=int, default=1, help="Number of random seeds to run.")
+    parser.add_argument("--gpu", type=str, default=None, help="GPU id to use (e.g. 0 or 1). If not set, TensorFlow chooses automatically.")
     parser.add_argument(
         "--write_results_dir",
         type=str,
@@ -140,6 +142,10 @@ def main():
     args = parse_args()
 
     exp_name = args.exp_name if args.exp_name is not None else f"{args.dataset}_{args.algorithm}"
+
+    # GPU selection
+    if args.gpu is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
     print("Configuration")
     print(json.dumps(vars(args), indent=2))

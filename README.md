@@ -15,4 +15,4 @@ python main.py --dataset cifar10 --algorithm dbp --hidden_sizes 1024 1024 1024 -
 python plot.py --results_folder results/cifar10_fc
 
 # MNIST 50 iters
-python main.py --dataset mnist --algorithm anp --hidden_sizes 20 20 --epochs 200 --batch_size 1 --lr 1e-5 --noise_std 0.001 --num_noise_iters 1 --num_seeds 3 --write_results_dir results/mnist
+python main.py --dataset mnist --algorithm anp --hidden_sizes 20 20 --epochs 200 --batch_size 1 --lr 1e-5 --noise_std 0.001 --num_noise_iters 50 --num_seeds 1 --write_results_dir results/mnist --gpu 5
