@@ -1,4 +1,7 @@
-from typing import Tuple
+from typing import Tuple, Optional
+import json
+from pathlib import Path
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.datasets import mnist, cifar10, cifar100
@@ -24,7 +27,6 @@ def _normalize_unit_range(x_train: np.ndarray, x_test: np.ndarray) -> Tuple[np.n
     x_train = x_train.astype(np.float32) / 255.0
     x_test = x_test.astype(np.float32) / 255.0
     return x_train, x_test
-
 
 
 def load_dataset(
@@ -125,11 +127,6 @@ def evaluate_model(model, dataset: tf.data.Dataset, loss_fn, decorrelated: bool)
 
 
 def algorithm_to_flags(name: str) -> Tuple[str, bool]:
-    """
-    Returns:
-        base_algorithm in {"bp", "np", "anp", "inp"}
-        decorrelated flag
-    """
     name = name.lower()
     mapping = {
         "bp": ("bp", False),
@@ -144,3 +141,70 @@ def algorithm_to_flags(name: str) -> Tuple[str, bool]:
     if name not in mapping:
         raise ValueError(f"Unknown algorithm: {name}")
     return mapping[name]
+
+
+def _to_numpy(x):
+    if hasattr(x, "numpy"):
+        x = x.numpy()
+    return np.asarray(x)
+
+
+def _savetxt_safe(path: Path, x) -> None:
+    arr = _to_numpy(x)
+    if arr.ndim == 0:
+        arr = arr.reshape(1)
+    elif arr.ndim > 2:
+        arr = arr.reshape(-1)
+    np.savetxt(path, arr)
+
+
+def _save_metric_family(result_dir: Path, metric_name: str, values) -> None:
+    vals = _to_numpy(values)
+
+    if vals.size == 0:
+        return
+
+    if vals.dtype == object:
+        vals = np.array([_to_numpy(v) for v in values], dtype=float)
+
+    base = result_dir / metric_name
+
+    if vals.ndim == 1:
+        _savetxt_safe(Path(str(base) + "_traj.txt"), vals)
+        _savetxt_safe(Path(str(base) + "_last.txt"), vals[-1])
+        return
+
+    if vals.ndim != 2:
+        vals = vals.reshape(vals.shape[0], -1)
+
+    _savetxt_safe(Path(str(base) + "_mean.txt"), np.mean(vals, axis=0))
+    _savetxt_safe(Path(str(base) + "_std.txt"), np.std(vals, axis=0))
+    _savetxt_safe(Path(str(base) + "_sem.txt"), np.std(vals, axis=0) / np.sqrt(vals.shape[0]))
+    _savetxt_safe(Path(str(base) + "_min.txt"), np.min(vals, axis=0))
+    _savetxt_safe(Path(str(base) + "_max.txt"), np.max(vals, axis=0))
+
+
+def save_experiment_results(
+    write_results_dir: str,
+    exp_name: str,
+    histories: dict,
+    config: dict,
+    per_seed_payload: Optional[list] = None,
+) -> None:
+    result_dir = Path(write_results_dir) / exp_name
+    result_dir.mkdir(parents=True, exist_ok=True)
+
+    for metric_name, values in histories.items():
+        _save_metric_family(result_dir, metric_name, values)
+
+    if len(histories["train_acc"]) > 0:
+        _savetxt_safe(result_dir / "peak_train_acc.txt", np.max(_to_numpy(histories["train_acc"])))
+    if len(histories["test_acc"]) > 0:
+        _savetxt_safe(result_dir / "peak_test_acc.txt", np.max(_to_numpy(histories["test_acc"])))
+
+    with open(result_dir / f"{exp_name}.json", "w") as fp:
+        json.dump(config, fp, indent=2)
+
+    if per_seed_payload is not None:
+        with open(result_dir / "per_seed_results.json", "w") as fp:
+            json.dump(per_seed_payload, fp, indent=2)

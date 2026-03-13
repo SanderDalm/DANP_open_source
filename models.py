@@ -86,7 +86,6 @@ class MLP(keras.Model):
             )
             self.layers_list.append(layer)
 
-        # Build variables
         dummy = tf.zeros([1, input_dim], dtype=tf.float32)
         _ = self.forward(dummy, decorrelate=False)
 
@@ -113,5 +112,5 @@ class MLP(keras.Model):
     def ordered_trainable_variables(self) -> list[tf.Variable]:
         vars_out = []
         for layer in self.layers_list:
-            vars_out.extend(layer.trainable_variables)  # [kernel, bias]
+            vars_out.extend(layer.trainable_variables)
         return vars_out

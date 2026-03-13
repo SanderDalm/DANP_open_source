@@ -4,7 +4,6 @@ import argparse
 import json
 from pathlib import Path
 
-import numpy as np
 import tensorflow as tf
 
 from utils import (
@@ -12,6 +11,7 @@ from utils import (
     evaluate_model,
     load_dataset,
     make_loss_fn,
+    save_experiment_results,
     set_seed,
 )
 from models import MLP
@@ -21,8 +21,12 @@ from algorithms import optimizer_from_name, train_step
 def parse_args():
     parser = argparse.ArgumentParser(description="Lean implementation of BP/NP/ANP/INP and decorrelated variants.")
     parser.add_argument("--dataset", type=str, default="cifar10", choices=["mnist", "cifar10", "cifar100"])
-    parser.add_argument("--algorithm", type=str, default="danp",
-                        choices=["bp", "dbp", "np", "dnp", "anp", "danp", "inp", "dinp"])
+    parser.add_argument(
+        "--algorithm",
+        type=str,
+        default="danp",
+        choices=["bp", "dbp", "np", "dnp", "anp", "danp", "inp", "dinp"],
+    )
     parser.add_argument("--loss", type=str, default="ce", choices=["mse", "ce"])
     parser.add_argument("--optimizer", type=str, default="adam", choices=["sgd", "adam"])
     parser.add_argument("--hidden_sizes", type=int, nargs="+", default=[1024, 1024, 1024])
@@ -32,15 +36,36 @@ def parse_args():
     parser.add_argument("--decor_lr", type=float, default=1e-3)
     parser.add_argument("--noise_std", type=float, default=1e-2)
     parser.add_argument("--num_noise_iters", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--results_dir", type=str, default="results")
+    parser.add_argument("--seed", type=int, default=0, help="Base seed.")
+    parser.add_argument("--num_seeds", type=int, default=1, help="Number of random seeds to run.")
+    parser.add_argument(
+        "--write_results_dir",
+        type=str,
+        default="results",
+        help="Directory where this experiment folder will be written.",
+    )
+    parser.add_argument(
+        "--exp_name",
+        type=str,
+        default=None,
+        help="Experiment subfolder name. Defaults to dataset_algorithm.",
+    )
     parser.add_argument("--save_json", action="store_true")
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    set_seed(args.seed)
+def build_model(info: dict, hidden_sizes: list[int]) -> MLP:
+    return MLP(
+        input_dim=info["input_dim"],
+        hidden_sizes=hidden_sizes,
+        output_dim=info["num_classes"],
+        hidden_activation=tf.nn.leaky_relu,
+        output_activation=tf.nn.softmax,
+    )
+
+
+def run_single_seed(args, seed: int) -> dict:
+    set_seed(seed)
 
     base_algorithm, decorrelated = algorithm_to_flags(args.algorithm)
     loss_fn = make_loss_fn(args.loss)
@@ -51,13 +76,7 @@ def main():
         flatten=True,
     )
 
-    model = MLP(
-        input_dim=info["input_dim"],
-        hidden_sizes=args.hidden_sizes,
-        output_dim=info["num_classes"],
-        hidden_activation=tf.nn.leaky_relu,
-        output_activation=tf.nn.softmax,
-    )
+    model = build_model(info=info, hidden_sizes=args.hidden_sizes)
     optimizer = optimizer_from_name(args.optimizer, args.lr)
 
     history = {
@@ -67,8 +86,7 @@ def main():
         "test_acc": [],
     }
 
-    print("Configuration")
-    print(json.dumps(vars(args), indent=2))
+    print(f"\nRunning seed {seed}")
     print(f"Input dim: {info['input_dim']}, classes: {info['num_classes']}")
 
     for epoch in range(args.epochs):
@@ -108,24 +126,55 @@ def main():
         history["test_acc"].append(test_stats["acc"])
 
         print(
-            f"Epoch {epoch + 1:03d}/{args.epochs} | "
+            f"Seed {seed} | Epoch {epoch + 1:03d}/{args.epochs} | "
             f"train loss {train_stats['loss']:.4f} | train acc {train_stats['acc']:.4f} | "
             f"test loss {test_stats['loss']:.4f} | test acc {test_stats['acc']:.4f}"
         )
 
-    print("\nFinal metrics")
+    print("\nFinal metrics for seed", seed)
     print(json.dumps({k: v[-1] for k, v in history.items()}, indent=2))
+    return history
 
-    if args.save_json:
-        out_dir = Path(args.results_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{args.dataset}_{args.algorithm}_seed{args.seed}.json"
-        payload = {
-            "config": vars(args),
-            "history": history,
-        }
-        out_path.write_text(json.dumps(payload, indent=2))
-        print(f"Saved: {out_path}")
+
+def main():
+    args = parse_args()
+
+    exp_name = args.exp_name if args.exp_name is not None else f"{args.dataset}_{args.algorithm}"
+
+    print("Configuration")
+    print(json.dumps(vars(args), indent=2))
+
+    all_histories = {
+        "train_loss": [],
+        "train_acc": [],
+        "test_loss": [],
+        "test_acc": [],
+    }
+    per_seed_payload = []
+
+    for seed_offset in range(args.num_seeds):
+        seed = args.seed + seed_offset
+        history = run_single_seed(args, seed)
+
+        for key in all_histories:
+            all_histories[key].append(history[key])
+
+        per_seed_payload.append(
+            {
+                "seed": seed,
+                "history": history,
+            }
+        )
+
+    save_experiment_results(
+        write_results_dir=args.write_results_dir,
+        exp_name=exp_name,
+        histories=all_histories,
+        config=vars(args),
+        per_seed_payload=per_seed_payload if args.save_json else None,
+    )
+
+    print(f"\nSaved results to {Path(args.write_results_dir) / exp_name}")
 
 
 if __name__ == "__main__":
