@@ -125,7 +125,7 @@ def perturbation_gradients(
             performance_diff = tf.reshape(loss_clean - loss_noisy, [-1, 1])
 
             if variant == "np":
-                performance_diff = performance_diff / tf.cast(noise_std, performance_diff.dtype)
+                performance_diff = performance_diff / tf.cast(noise_std**2, performance_diff.dtype)
 
             grads = _np_like_grads_from_cached_pass(
                 model=model,
