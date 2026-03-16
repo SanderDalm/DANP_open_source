@@ -91,6 +91,26 @@ def run_single_seed(args, seed: int) -> dict:
     print(f"\nRunning seed {seed}")
     print(f"Input dim: {info['input_dim']}, classes: {info['num_classes']}")
 
+    # --- evaluate untrained model (epoch 0) ---
+    initial_stats = evaluate_model(
+        model=model,
+        dataset=test_ds,
+        loss_fn=loss_fn,
+        decorrelated=decorrelated,
+    )
+
+    history["train_loss"].append(float("nan"))  # no train loss yet
+    history["train_acc"].append(float("nan"))
+    history["test_loss"].append(initial_stats["loss"])
+    history["test_acc"].append(initial_stats["acc"])
+
+    print(
+        f"Epoch 000/{args.epochs} | "
+        f"test loss {initial_stats['loss']:.4f} | "
+        f"test acc {initial_stats['acc']:.4f}"
+    )
+
+
     for epoch in range(args.epochs):
         train_loss_metric = tf.keras.metrics.Mean()
         train_acc_metric = tf.keras.metrics.CategoricalAccuracy()
